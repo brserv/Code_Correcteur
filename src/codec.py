@@ -21,19 +21,19 @@ class ChannelCodec:
             return data
         return bytes(self.rs.encode(data))
 
-    def decode(self, data: bytes) -> Tuple[bytes, str, bool, int]:
-        """Decode data. Returns (decoded_bytes, status_str, success_flag, num_errors_corrected).
+    def decode(self, data: bytes) -> Tuple[bytes, bytearray, str, bool, int]:
+        """Decode data. Returns (decoded_bytes, corrected_with_parity, status_str, success_flag, num_errors_corrected).
 
         status_str can be: 'corrected', 'ok', 'error:<msg>' or 'raw' when disabled.
         """
         if not self.enabled:
-            return data, 'raw', True, 0
+            return data, bytearray(data), 'raw', True, 0
         try:
-            decoded, _, error_positions = self.rs.decode(data)
+            decoded, corrected_with_parity, error_positions = self.rs.decode(data)
             num_errors = len(error_positions) if error_positions else 0
             status = 'corrected' if num_errors > 0 else 'ok'
-            return bytes(decoded), status, True, num_errors
+            return bytes(decoded), corrected_with_parity, status, True, num_errors
         except ReedSolomonError as e:
-            return b'', f'error:{e}', False, 0
+            return b'', bytearray(), f'error:{e}', False, 0
         except Exception as e:
-            return b'', f'error:{e}', False, 0
+            return b'', bytearray(), f'error:{e}', False, 0

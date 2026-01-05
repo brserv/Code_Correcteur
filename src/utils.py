@@ -47,3 +47,23 @@ def inject_random(payload: bytes, n_bytes: int = 1, bits_per_byte: int = 1, seed
             arr[idx] ^= (1 << bit)
             total_flips += 1
     return bytes(arr), total_flips
+
+
+def inject_exact_bits(payload: bytes, num_bits: int, seed: int | None = None) -> bytes:
+    """Flip exactly num_bits random bits in the payload."""
+    if seed is not None:
+        random.seed(seed)
+    arr = bytearray(payload)
+    L = len(arr)
+    if L == 0 or num_bits <= 0:
+        return bytes(arr)
+    total_bits = L * 8
+    if num_bits > total_bits:
+        num_bits = total_bits
+    # Select num_bits unique positions
+    positions = random.sample(range(total_bits), num_bits)
+    for pos in positions:
+        byte_idx = pos // 8
+        bit_idx = pos % 8
+        arr[byte_idx] ^= (1 << bit_idx)
+    return bytes(arr)
