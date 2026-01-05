@@ -1,0 +1,3 @@
+PySide6>=6.5
+pyserial>=3.5
+reedsolo>=1.6.1
