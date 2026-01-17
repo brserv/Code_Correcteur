@@ -16,7 +16,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle('TP Transmission fiabilisée - RS232 loopback')
-        self.codec = ChannelCodec(t=2, enabled=True)
+        self.codec = ChannelCodec(t=4, enabled=True)
         self.link: SerialLink | None = None
         self._build_ui()
         self._refresh_ports()
@@ -147,11 +147,16 @@ class MainWindow(QMainWindow):
         self.encoded_view.setText(to_hex(coded))
 
     def on_inject(self):
-        if not hasattr(self, 'current_payload'):
+        # Toujours repartir du mot encodé pour éviter l'accumulation d'erreurs
+        try:
+            payload = self._read_word_input()
+        except Exception:
             QMessageBox.warning(self, 'Aucun mot', 'Encoder un mot avant d\'injecter')
             return
+        self.codec.enabled = not self.chk_disable_coding.isChecked()
+        coded = self.codec.encode(payload)
         num_errors = self.spin_errors.value()
-        after = inject_exact_bits(self.current_payload, num_errors)
+        after = inject_exact_bits(coded, num_errors)
         self.current_payload = after
         self.encoded_view.setText(to_hex(after))
 
