@@ -1,10 +1,11 @@
 """Transmission window for the TP."""
 from PySide6.QtWidgets import (QWidget, QLabel, QPushButton, QComboBox,
-                               QLineEdit, QCheckBox, QSpinBox, QGridLayout, QMessageBox)
+                               QLineEdit, QCheckBox, QSpinBox, QGridLayout, QMessageBox,
+                               QVBoxLayout, QHBoxLayout, QGroupBox)
 from PySide6.QtCore import Signal, QTimer
 from src.serial_comm import list_serial_ports, build_frame, SerialLink
 from src.codec import ChannelCodec
-from src.utils import to_hex, inject_exact_bits
+from src.utils import to_hex, inject_exact_bits, inject_errors_in_byte, inject_errors_in_n_bytes
 import traceback
 
 
@@ -23,67 +24,132 @@ class TransmitWindow(QWidget):
         self.port_timer.start(2000)
 
     def _build_ui(self):
-        layout = QGridLayout()
-
-        # Port selection
-        layout.addWidget(QLabel('Port:'), 0, 0)
+        main_layout = QVBoxLayout()
+        
+        # === Configuration de la liaison ===
+        config_group = QGroupBox("Configuration de la liaison")
+        config_layout = QHBoxLayout()
+        
+        config_layout.addWidget(QLabel('Port:'))
         self.port_combo = QComboBox()
-        layout.addWidget(self.port_combo, 0, 1)
-        layout.addWidget(QLabel('Baudrate:'), 0, 2)
+        config_layout.addWidget(self.port_combo)
+        
+        config_layout.addWidget(QLabel('Baudrate:'))
         self.baud_combo = QComboBox()
         for b in [9600, 19200, 38400, 57600, 115200, 230400]:
             self.baud_combo.addItem(str(b))
         self.baud_combo.setCurrentText('115200')
-        layout.addWidget(self.baud_combo, 0, 3)
-
-        # Word input (variable size)
-        layout.addWidget(QLabel('Mot (binaire multiple de 8 bits, hex paire, ou texte, taille variable):'), 1, 0, 1, 4)
-        self.word_input = QLineEdit('00000000')
-        layout.addWidget(self.word_input, 2, 0, 1, 4)
-
+        config_layout.addWidget(self.baud_combo)
+        
+        self.btn_test = QPushButton('Test liaison')
+        self.btn_test.clicked.connect(self.on_test)
+        config_layout.addWidget(self.btn_test)
+        
+        config_layout.addStretch()
+        config_group.setLayout(config_layout)
+        main_layout.addWidget(config_group)
+        
+        # === Entrée des données ===
+        input_group = QGroupBox("Entrée des données")
+        input_layout = QVBoxLayout()
+        
+        input_layout.addWidget(QLabel('Message (binaire multiple de 8 bits, hexadécimal paire, ou texte):'))
+        self.word_input = QLineEdit('Hello')
+        input_layout.addWidget(self.word_input)
+        
         # Format selection
+        format_layout = QHBoxLayout()
         self.chk_binary = QCheckBox('Binaire')
         self.chk_hex = QCheckBox('Hexadécimal')
         self.chk_text = QCheckBox('Texte')
-        self.chk_binary.setChecked(True)  # Default to binary
+        self.chk_text.setChecked(True)  # Default to text
         self.chk_binary.stateChanged.connect(self._on_format_changed)
         self.chk_hex.stateChanged.connect(self._on_format_changed)
         self.chk_text.stateChanged.connect(self._on_format_changed)
-        layout.addWidget(self.chk_binary, 3, 0)
-        layout.addWidget(self.chk_hex, 3, 1)
-        layout.addWidget(self.chk_text, 3, 2)
-
-        # Options
-        self.chk_disable_coding = QCheckBox('Inhiber codage canal (envoyer brut)')
-        layout.addWidget(self.chk_disable_coding, 3, 3)
-
-        # Encode / view
-        self.btn_encode = QPushButton('Encoder et afficher mot codé (hex)')
+        format_layout.addWidget(self.chk_binary)
+        format_layout.addWidget(self.chk_hex)
+        format_layout.addWidget(self.chk_text)
+        
+        self.chk_disable_coding = QCheckBox('Inhiber codage canal')
+        format_layout.addStretch()
+        format_layout.addWidget(self.chk_disable_coding)
+        input_layout.addLayout(format_layout)
+        
+        # Encode button
+        self.btn_encode = QPushButton('Encoder et afficher le mot codé')
         self.btn_encode.clicked.connect(self.on_encode)
-        layout.addWidget(self.btn_encode, 4, 0, 1, 4)
+        input_layout.addWidget(self.btn_encode)
+        
+        input_layout.addWidget(QLabel('Mot codé (hexadécimal):'))
         self.encoded_view = QLineEdit()
         self.encoded_view.setReadOnly(True)
-        layout.addWidget(self.encoded_view, 5, 0, 1, 4)
-
-        # Error injection
-        layout.addWidget(QLabel('Nombre d\'erreurs à injecter (aléatoire):'), 6, 0, 1, 2)
-        self.spin_errors = QSpinBox()
-        self.spin_errors.setMinimum(0)
-        self.spin_errors.setMaximum(256)
-        layout.addWidget(self.spin_errors, 6, 2)
-        self.btn_inject = QPushButton('Injecter erreurs')
-        self.btn_inject.clicked.connect(self.on_inject)
-        layout.addWidget(self.btn_inject, 6, 3)
-
-        # Send
-        self.btn_send = QPushButton('Envoyer sur RS232 (loopback)')
+        input_layout.addWidget(self.encoded_view)
+        
+        input_group.setLayout(input_layout)
+        main_layout.addWidget(input_group)
+        
+        # === Injection d'erreurs ===
+        error_group = QGroupBox("Simulation d'erreurs de transmission")
+        error_layout = QVBoxLayout()
+        
+        # Erreurs dans un octet spécifique
+        byte_error_layout = QHBoxLayout()
+        byte_error_layout.addWidget(QLabel('Octet à corrompre (index):'))
+        self.spin_byte_index = QSpinBox()
+        self.spin_byte_index.setMinimum(0)
+        self.spin_byte_index.setMaximum(255)
+        byte_error_layout.addWidget(self.spin_byte_index)
+        
+        byte_error_layout.addWidget(QLabel('Nb erreurs:'))
+        self.spin_errors_in_byte = QSpinBox()
+        self.spin_errors_in_byte.setMinimum(1)
+        self.spin_errors_in_byte.setMaximum(8)
+        self.spin_errors_in_byte.setValue(1)
+        byte_error_layout.addWidget(self.spin_errors_in_byte)
+        
+        self.btn_inject_in_byte = QPushButton('Injecter dans 1 octet')
+        self.btn_inject_in_byte.clicked.connect(self.on_inject_in_byte)
+        byte_error_layout.addWidget(self.btn_inject_in_byte)
+        byte_error_layout.addStretch()
+        
+        error_layout.addLayout(byte_error_layout)
+        
+        # Erreurs dans N octets
+        n_bytes_error_layout = QHBoxLayout()
+        n_bytes_error_layout.addWidget(QLabel('Nombre d\'octets à corrompre:'))
+        self.spin_n_bytes = QSpinBox()
+        self.spin_n_bytes.setMinimum(1)
+        self.spin_n_bytes.setMaximum(255)
+        self.spin_n_bytes.setValue(2)
+        n_bytes_error_layout.addWidget(self.spin_n_bytes)
+        
+        n_bytes_error_layout.addWidget(QLabel('Erreurs par octet:'))
+        self.spin_errors_per_n_byte = QSpinBox()
+        self.spin_errors_per_n_byte.setMinimum(1)
+        self.spin_errors_per_n_byte.setMaximum(8)
+        self.spin_errors_per_n_byte.setValue(1)
+        n_bytes_error_layout.addWidget(self.spin_errors_per_n_byte)
+        
+        self.btn_inject_n_bytes = QPushButton('Injecter dans N octets')
+        self.btn_inject_n_bytes.clicked.connect(self.on_inject_n_bytes)
+        n_bytes_error_layout.addWidget(self.btn_inject_n_bytes)
+        n_bytes_error_layout.addStretch()
+        
+        error_layout.addLayout(n_bytes_error_layout)
+        
+        error_group.setLayout(error_layout)
+        main_layout.addWidget(error_group)
+        
+        # === Envoi ===
+        send_layout = QHBoxLayout()
+        self.btn_send = QPushButton('📡 ENVOYER sur RS232')
+        self.btn_send.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold; padding: 10px;")
         self.btn_send.clicked.connect(self.on_send)
-        layout.addWidget(self.btn_send, 7, 0, 1, 2)
-        self.btn_test = QPushButton('Test liaison (ping TEST)')
-        self.btn_test.clicked.connect(self.on_test)
-        layout.addWidget(self.btn_test, 7, 2, 1, 2)
-
-        self.setLayout(layout)
+        send_layout.addWidget(self.btn_send)
+        main_layout.addLayout(send_layout)
+        
+        main_layout.addStretch()
+        self.setLayout(main_layout)
 
     def _on_format_changed(self):
         # Ensure only one checkbox is checked
@@ -145,8 +211,8 @@ class TransmitWindow(QWidget):
         self.current_payload = coded
         self.encoded_view.setText(to_hex(coded))
 
-    def on_inject(self):
-        # Toujours repartir du mot encodé pour éviter l'accumulation d'erreurs
+    def on_inject_in_byte(self):
+        # Injecter des erreurs dans un octet spécifique
         try:
             payload = self._read_word_input()
         except Exception:
@@ -154,8 +220,34 @@ class TransmitWindow(QWidget):
             return
         self.codec.enabled = not self.chk_disable_coding.isChecked()
         coded = self.codec.encode(payload)
-        num_errors = self.spin_errors.value()
-        after = inject_exact_bits(coded, num_errors)
+        
+        byte_index = self.spin_byte_index.value()
+        if byte_index >= len(coded):
+            QMessageBox.warning(self, 'Index invalide', f'L\'index doit être < {len(coded)}')
+            return
+        
+        num_errors = self.spin_errors_in_byte.value()
+        after = inject_errors_in_byte(coded, byte_index, num_errors)
+        self.current_payload = after
+        self.encoded_view.setText(to_hex(after))
+
+    def on_inject_n_bytes(self):
+        # Injecter des erreurs dans N octets différents
+        try:
+            payload = self._read_word_input()
+        except Exception:
+            QMessageBox.warning(self, 'Aucun mot', 'Encoder un mot avant d\'injecter')
+            return
+        self.codec.enabled = not self.chk_disable_coding.isChecked()
+        coded = self.codec.encode(payload)
+        
+        n_bytes = self.spin_n_bytes.value()
+        if n_bytes > len(coded):
+            QMessageBox.warning(self, 'Nombre invalide', f'Nb octets doit être ≤ {len(coded)}')
+            return
+        
+        errors_per_byte = self.spin_errors_per_n_byte.value()
+        after = inject_errors_in_n_bytes(coded, n_bytes, errors_per_byte)
         self.current_payload = after
         self.encoded_view.setText(to_hex(after))
 

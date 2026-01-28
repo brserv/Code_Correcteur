@@ -4,11 +4,11 @@ Provides a main window with tabs for transmission and reception.
 """
 from PySide6.QtWidgets import (QMainWindow, QWidget, QLabel, QPushButton, QComboBox,
                                QLineEdit, QTextEdit, QCheckBox, QSpinBox, QGridLayout,
-                               QHBoxLayout, QVBoxLayout, QTabWidget)
+                               QHBoxLayout, QVBoxLayout, QTabWidget, QMessageBox)
 from PySide6.QtCore import QTimer
 from src.serial_comm import list_serial_ports, build_frame, SerialLink
 from src.codec import ChannelCodec
-from src.utils import to_hex, inject_exact_bits, to_bin, to_text
+from src.utils import to_hex, inject_exact_bits, to_bin, to_text, inject_errors_in_byte
 import traceback
 
 
@@ -79,13 +79,42 @@ class MainWindow(QMainWindow):
         self.btn_inject.clicked.connect(self.on_inject)
         layout.addWidget(self.btn_inject, 6, 3)
 
+        # Error injection per byte
+        layout.addWidget(QLabel('Erreurs par octet:'), 7, 0, 1, 2)
+        self.spin_errors_per_byte = QSpinBox()
+        self.spin_errors_per_byte.setMinimum(0)
+        self.spin_errors_per_byte.setMaximum(8)  # max 8 bits per byte
+        self.spin_errors_per_byte.setValue(0)
+        layout.addWidget(self.spin_errors_per_byte, 7, 2)
+        self.btn_inject_per_byte = QPushButton('Injecter par octet')
+        self.btn_inject_per_byte.clicked.connect(self.on_inject_per_byte)
+        layout.addWidget(self.btn_inject_per_byte, 7, 3)
+
+        # Error injection in specific byte
+        layout.addWidget(QLabel('Injecter erreurs dans octet (index):'), 8, 0, 1, 2)
+        self.spin_byte_index = QSpinBox()
+        self.spin_byte_index.setMinimum(0)
+        self.spin_byte_index.setMaximum(255)  # will be adjusted dynamically
+        layout.addWidget(self.spin_byte_index, 8, 2)
+        layout.addWidget(QLabel('Nombre d\'erreurs:'), 8, 3)
+        
+        self.spin_errors_in_byte = QSpinBox()
+        self.spin_errors_in_byte.setMinimum(0)
+        self.spin_errors_in_byte.setMaximum(8)  # max 8 bits per byte
+        self.spin_errors_in_byte.setValue(1)
+        layout.addWidget(self.spin_errors_in_byte, 8, 4)
+        
+        self.btn_inject_in_byte = QPushButton('Injecter')
+        self.btn_inject_in_byte.clicked.connect(self.on_inject_in_byte)
+        layout.addWidget(self.btn_inject_in_byte, 8, 5)
+
         # Send
         self.btn_send = QPushButton('Envoyer sur RS232 (loopback)')
         self.btn_send.clicked.connect(self.on_send)
-        layout.addWidget(self.btn_send, 7, 0, 1, 2)
+        layout.addWidget(self.btn_send, 9, 0, 1, 2)
         self.btn_test = QPushButton('Test liaison (ping TEST)')
         self.btn_test.clicked.connect(self.on_test)
-        layout.addWidget(self.btn_test, 7, 2, 1, 2)
+        layout.addWidget(self.btn_test, 9, 2, 1, 2)
 
         widget.setLayout(layout)
 
@@ -157,6 +186,41 @@ class MainWindow(QMainWindow):
         coded = self.codec.encode(payload)
         num_errors = self.spin_errors.value()
         after = inject_exact_bits(coded, num_errors)
+        self.current_payload = after
+        self.encoded_view.setText(to_hex(after))
+
+    def on_inject_per_byte(self):
+        # Injecter des erreurs par octet
+        try:
+            payload = self._read_word_input()
+        except Exception:
+            QMessageBox.warning(self, 'Aucun mot', 'Encoder un mot avant d\'injecter')
+            return
+        self.codec.enabled = not self.chk_disable_coding.isChecked()
+        coded = self.codec.encode(payload)
+        errors_per_byte = self.spin_errors_per_byte.value()
+        after = inject_errors_per_byte(coded, errors_per_byte)
+        self.current_payload = after
+        self.encoded_view.setText(to_hex(after))
+
+    def on_inject_in_byte(self):
+        # Injecter des erreurs dans un octet spécifique
+        try:
+            payload = self._read_word_input()
+        except Exception:
+            QMessageBox.warning(self, 'Aucun mot', 'Encoder un mot avant d\'injecter')
+            return
+        self.codec.enabled = not self.chk_disable_coding.isChecked()
+        coded = self.codec.encode(payload)
+        
+        # Vérifier que l'index est valide
+        byte_index = self.spin_byte_index.value()
+        if byte_index >= len(coded):
+            QMessageBox.warning(self, 'Index invalide', f'L\'octet index doit être < {len(coded)}')
+            return
+        
+        num_errors = self.spin_errors_in_byte.value()
+        after = inject_errors_in_byte(coded, byte_index, num_errors)
         self.current_payload = after
         self.encoded_view.setText(to_hex(after))
 
