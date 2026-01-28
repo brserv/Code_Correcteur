@@ -20,7 +20,7 @@ class ReceiveWindow(QWidget):
         received_layout.addWidget(QLabel('Données brutes (hexadécimal):'))
         self.received_view = QLineEdit()
         self.received_view.setReadOnly(True)
-        self.received_view.setStyleSheet("background-color: #f0f0f0; font-family: 'Courier New'; color: black;")
+        self.received_view.setStyleSheet("background-color: #1e1e1e; font-family: 'Courier New'; color: #e6e6e6;")
         received_layout.addWidget(self.received_view)
         
         received_group.setLayout(received_layout)
@@ -33,7 +33,7 @@ class ReceiveWindow(QWidget):
         self.decoded_view = QTextEdit()
         self.decoded_view.setReadOnly(True)
         self.decoded_view.setMinimumHeight(150)
-        self.decoded_view.setStyleSheet("background-color: #f9f9f9; font-family: 'Courier New'; color: black;")
+        self.decoded_view.setStyleSheet("background-color: #1e1e1e; font-family: 'Courier New'; color: #e6e6e6;")
         decoded_layout.addWidget(self.decoded_view)
         
         decoded_group.setLayout(decoded_layout)
